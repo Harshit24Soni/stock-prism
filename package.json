@@ -1,0 +1,15 @@
+{
+  "name": "stock-prism",
+  "version": "1.0.0",
+  "description": "Stock Prism - AI Stock Analysis Platform",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd . && python main.py",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "cd frontend && npm install",
+    "test": "python -m unittest discover -s tests -p \"test_*.py\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
