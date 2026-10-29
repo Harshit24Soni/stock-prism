@@ -94,9 +94,12 @@ class TestStockTools(unittest.TestCase):
         mock_instance.history.return_value = pd.DataFrame()
         mock_ticker.return_value = mock_instance
 
-        result = get_historical_data.invoke({"ticker": "AAPL", "start_date": "2024-01-01", "end_date": "2024-01-10"})
+        with self.assertLogs("Tools", level="WARNING") as log_capture:
+            result = get_historical_data.invoke({"ticker": "AAPL", "start_date": "2024-01-01", "end_date": "2024-01-10"})
         self.assertIn("No historical data available", result)
         self.assertNotIn("{ticker}", result)
+        self.assertTrue(any("empty results for AAPL" in msg for msg in log_capture.output))
+        self.assertFalse(any("Retrieved Historical Data of AAPL (" in msg for msg in log_capture.output))
 
     # ---------------------------------------------------------
     # Tool 3: get_stock_news
@@ -233,6 +236,26 @@ class TestStockTools(unittest.TestCase):
         result = get_ticker.invoke("NonExistentCo123")
         self.assertIn("No ticker found", result)
         self.assertNotIn("{company_name}", result)
+
+    @patch("requests.get")
+    def test_get_ticker_jio_disambiguation(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "quotes": [
+                {"symbol": "JPL.NS", "shortname": "JIO PLATFORMS LIMITED", "quoteType": "EQUITY"},
+                {"symbol": "JIOFIN.NS", "shortname": "JIO FIN SERVICES LTD", "quoteType": "EQUITY"},
+                {"symbol": "JIO-USD", "shortname": "Jio Platforms Derivatives", "quoteType": "CRYPTOCURRENCY"},
+            ]
+        }
+        mock_get.return_value = mock_resp
+
+        # Asking for Jio Financial Services should return JIOFIN.NS
+        self.assertEqual(get_ticker.invoke("Jio Financial Services"), "JIOFIN.NS")
+        # Asking for Jio should prefer listed entity JIOFIN.NS
+        self.assertEqual(get_ticker.invoke("Jio"), "JIOFIN.NS")
+        # Asking specifically for Jio Platforms should return JPL.NS
+        self.assertEqual(get_ticker.invoke("Jio Platforms"), "JPL.NS")
 
     @patch("requests.get")
     def test_get_ticker_http_error(self, mock_get):

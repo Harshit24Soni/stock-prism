@@ -144,13 +144,22 @@ def get_historical_data(ticker: str, start_date: str, end_date: str):
             return stock.history(start=start_date, end=end_date)
 
         history_df = _run_with_timeout(_fetch_hist, timeout=DEFAULT_TOOL_TIMEOUT)
+        end_time = time.time()
+        elapsed = end_time - start_time
+
+        if history_df is None or (hasattr(history_df, "empty") and history_df.empty):
+            logger.warning(
+                f"Historical data lookup returned empty results for {ticker} "
+                f"between {start_date} and {end_date} in {elapsed:.3f} seconds"
+            )
+            return f"No historical data available for {ticker} between {start_date} and {end_date}"
+
         historical_data = _safe_df_to_dict(
             history_df,
             f"No historical data available for {ticker} between {start_date} and {end_date}"
         )
 
-        end_time = time.time()
-        logger.info(f"Retrieved Historical Data of {ticker} in {end_time - start_time:.3f} seconds")
+        logger.info(f"Retrieved Historical Data of {ticker} ({len(history_df)} records) in {elapsed:.3f} seconds")
         return historical_data
 
     except TimeoutError:
@@ -644,7 +653,37 @@ def get_ticker(company_name: str):
             if not quotes:
                 return f"No ticker found for company: {clean_name}"
 
-            ticker = quotes[0].get("symbol")
+            # Filter for equity and ETF quotes first (avoids cryptocurrency/derivative tokens)
+            equity_quotes = [q for q in quotes if q.get("quoteType") in ("EQUITY", "ETF")]
+            candidate_pool = equity_quotes if equity_quotes else quotes
+
+            ticker = None
+            clean_lower = clean_name.lower()
+
+            # Disambiguation for Jio Platforms (JPL.NS) vs Jio Financial Services (JIOFIN.NS)
+            if "jio" in clean_lower:
+                if "platform" in clean_lower:
+                    for q in candidate_pool:
+                        if "JPL" in q.get("symbol", ""):
+                            ticker = q.get("symbol")
+                            break
+                else:
+                    for q in candidate_pool:
+                        if "JIOFIN" in q.get("symbol", ""):
+                            ticker = q.get("symbol")
+                            break
+
+            # Exact symbol match if query directly equals a symbol
+            if not ticker:
+                for q in candidate_pool:
+                    if q.get("symbol", "").upper() == clean_name.upper():
+                        ticker = q.get("symbol")
+                        break
+
+            # Default to top candidate
+            if not ticker and candidate_pool:
+                ticker = candidate_pool[0].get("symbol")
+
             if not ticker:
                 return f"No ticker symbol found in results for company: {clean_name}"
 
